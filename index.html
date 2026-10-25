@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>Altimétrie des fondations</title>
+<meta name="theme-color" content="#073b2a">
+<!-- Outil indépendant (aucun lien avec Apps Script). Le plan PDF est lu et calculé sur l'appareil ; rien n'est envoyé. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+:root{--vert:#073b2a;--vert2:#087a4b;--fond:#eef1f3;--texte:#17201c;--orange:#c96a00;--bleu:#1769aa;--rouge:#b42318}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--fond);color:var(--texte);font-family:Arial,sans-serif;overscroll-behavior:none}
+body{display:flex;flex-direction:column;height:100dvh}
+header{background:linear-gradient(135deg,#073b2a,#087a4b);color:#fff;padding:8px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;flex:1;min-width:150px;line-height:1.2}
+header h1 small{display:block;font-size:11px;font-weight:400;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+.btn{border:0;border-radius:10px;padding:10px 12px;font:700 14px Arial;cursor:pointer;min-height:44px;background:#e9efec;color:var(--vert)}
+.btn.primary{background:#14a06a;color:#fff}.btn.dark{background:#303432;color:#fff}.btn.blue{background:var(--bleu);color:#fff}.btn.red{background:#f8d8d6;color:var(--rouge)}
+.btn:disabled{opacity:.45}
+#step{background:#fff8df;border-bottom:1px solid #f0d58c;padding:9px 12px;font-size:14px;line-height:1.35;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#step b{color:var(--vert)}#step .actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+#stage{position:relative;flex:1;overflow:hidden;background:#9aa3a0;touch-action:none;cursor:grab}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#world canvas{display:block;background:#fff}
+#overlay{position:absolute;left:0;top:0}
+.pin{position:absolute;transform:translate(-50%,-50%) scale(var(--inv,1));transform-origin:center;pointer-events:none;display:flex;flex-direction:column;align-items:center}
+.pin .dot{width:22px;height:22px;border-radius:50%;border:3px solid var(--bleu);background:rgba(255,255,255,.85);box-shadow:0 1px 3px #0006}
+.pin .lab{margin-top:2px;background:rgba(255,255,255,.95);border:1px solid #9bb;border-radius:6px;padding:1px 5px;font:700 12px Arial;white-space:nowrap;color:#123}
+.pin.ok .dot{border-color:#14813f;background:#c9f0d8}.pin.cale .dot{border-color:var(--orange);background:#ffe2bf}
+.pin.zero .dot{border-color:#b8860b;background:#ffd84d;width:26px;height:26px}.pin.zero .lab{border-color:#b8860b}
+.pin.target .lab{outline:2px dashed #b8860b}
+.pin.manual .dot{border-style:dashed}
+#zoombar{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px;z-index:5}
+#zoombar .btn{width:46px;padding:0;font-size:20px;background:#fff;box-shadow:0 1px 4px #0004}
+#empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px;color:#fff;font-size:15px}
+#sheet{background:#fff;border-top:1px solid #cfd8d3;padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#sheet .sum{flex:1;min-width:180px;font-size:13px;line-height:1.35}
+#sheet .sum .big{font-size:20px;font-weight:900;color:var(--vert)}
+.modal{position:fixed;inset:0;background:rgba(10,20,15,.55);display:none;align-items:flex-end;justify-content:center;z-index:50}
+.modal.show{display:flex}
+.box{background:#fff;width:min(460px,100%);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));max-height:92dvh;overflow:auto}
+@media(min-width:700px){.modal{align-items:center}.box{border-radius:16px}}
+.box h2{margin:0 0 6px;font-size:18px;color:var(--vert)}
+.hint{font-size:13px;color:#56635d;line-height:1.35}
+#kpVal{font:900 34px Arial;text-align:center;padding:8px;border:2px solid #cfd8d3;border-radius:12px;margin:8px 0}
+#kpVal small{font-size:16px;color:#56635d}
+.kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kp button{min-height:56px;font:800 22px Arial;border:0;border-radius:12px;background:#eef3f0;color:#123}
+.kp button.op{background:#dfe9f5}
+.row2{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.row2 .btn{flex:1}
+table.res{width:100%;border-collapse:collapse;font-size:14px}
+table.res th,table.res td{padding:7px 6px;border-bottom:1px solid #e3e9e6;text-align:center}
+table.res th{background:#eaf5ef;color:var(--vert)}table.res td:first-child{text-align:left;font-weight:700}
+table.res tr.zero td{background:#fff6d3}
+.tag{display:inline-block;border-radius:999px;padding:1px 7px;font-size:12px;font-weight:800}
+.tag.c{background:#ffe2bf;color:#8a4a00}.tag.o{background:#dff3e8;color:#14613b}
+#busy{position:fixed;inset:0;background:rgba(255,255,255,.75);display:none;align-items:center;justify-content:center;z-index:60;font:700 16px Arial;color:var(--vert)}
+#busy.show{display:flex}
+</style>
+</head>
+<body>
+<header>
+ <h1>📏 Altimétrie des fondations<small id="fileName">Aucun plan chargé</small></h1>
+ <button class="btn" id="btnOpen">📄 Plan</button>
+ <button class="btn dark" id="btnNew">↺ Nouveau</button>
+</header>
+<div id="step"><span id="stepText">Ouvrez le plan d'implantation PDF du bureau d'études.</span><span class="actions" id="stepActions"></span></div>
+<div id="stage">
+ <div id="world"><canvas id="cv"></canvas><div id="overlay"></div></div>
+ <div id="zoombar"><button class="btn" data-z="1.4" aria-label="Zoomer">＋</button><button class="btn" data-z="0.7" aria-label="Dézoomer">－</button><button class="btn" id="btnFit" aria-label="Cadrer">⤢</button></div>
+ <div id="empty"><div style="font-size:42px">📄</div><div>Ouvrez le plan d'implantation (PDF).<br>Les massifs seront repérés automatiquement<br>grâce au tableau des points d'implantation.</div><button class="btn primary" id="btnOpen2">📄 Ouvrir un plan PDF</button></div>
+</div>
+<div id="sheet">
+ <div class="sum" id="summary">—</div>
+ <button class="btn" id="btnAdd">＋ Massif</button>
+ <button class="btn" id="btnTable">📋 Tableau</button>
+ <button class="btn blue" id="btnPdf">📄 PDF</button>
+</div>
+<input type="file" id="file" accept="application/pdf,.pdf" hidden>
+
+<div class="modal" id="kpModal"><div class="box">
+ <h2 id="kpTitle">Massif</h2>
+ <div class="hint" id="kpHint">Écart en mm par rapport au point zéro : + plus haut, − plus bas.</div>
+ <div id="kpVal">—</div>
+ <div class="kp">
+  <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+  <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+  <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+  <button data-k="±" class="op">＋/−</button><button data-k="0">0</button><button data-k="⌫" class="op">⌫</button>
+ </div>
+ <div class="row2"><button class="btn" id="kpClear">Effacer la cote</button><button class="btn primary" id="kpOk">✓ Valider</button></div>
+ <div class="row2"><button class="btn" id="kpZero">⭐ Point zéro</button><button class="btn red" id="kpDel">🗑 Retirer</button><button class="btn" id="kpCancel">Annuler</button></div>
+</div></div>
+
+<div class="modal" id="tabModal"><div class="box">
+ <h2>Tableau des cales</h2>
+ <div class="hint" id="tabInfo"></div>
+ <div style="overflow:auto;margin-top:8px"><table class="res" id="tabRes"></table></div>
+ <div class="row2"><button class="btn primary" id="tabClose">Fermer</button></div>
+</div></div>
+
+<div class="modal" id="newModal"><div class="box">
+ <h2>Nouveau relevé</h2>
+ <div class="hint">Que voulez-vous faire ?</div>
+ <div class="row2"><button class="btn" id="newCotes">Effacer les cotes (garder le plan)</button></div>
+ <div class="row2"><button class="btn red" id="newAll">Tout effacer et changer de plan</button></div>
+ <div class="row2"><button class="btn" id="newCancel">Annuler</button></div>
+</div></div>
+<div id="busy">⏳ <span id="busyText">Chargement…</span></div>
+
+<script>
+'use strict';
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $=id=>document.getElementById(id);
+const CALE=5,TOL=2.5,STORE='altimetrie_releve_v1';
+
+// ---------- État (gardé sur l'appareil) ----------
+let S={fileName:'',massifs:[],zeroId:null,calib:null,mode:'idle',pageW:0,pageH:0};
+let pdfBytes=null,pdfPage=null,R=1,view={z:1,tx:0,ty:0},pending=null;
+function save(){try{localStorage.setItem(STORE,JSON.stringify(S));}catch(e){}}
+function idb(){return new Promise((ok,ko)=>{const r=indexedDB.open('altimetrie_fondations',1);r.onupgradeneeded=()=>r.result.createObjectStore('f');r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+async function idbSet(v){try{const db=await idb();await new Promise((ok,ko)=>{const t=db.transaction('f','readwrite');t.objectStore('f').put(v,'plan');t.oncomplete=ok;t.onerror=()=>ko(t.error);});}catch(e){}}
+async function idbGet(){try{const db=await idb();return await new Promise(ok=>{const g=db.transaction('f').objectStore('f').get('plan');g.onsuccess=()=>ok(g.result||null);g.onerror=()=>ok(null);});}catch(e){return null;}}
+const busy=(on,t)=>{$('busy').classList.toggle('show',!!on);if(t)$('busyText').textContent=t;};
+
+// ---------- Calcul des cales ----------
+// Une cale = 5 mm, 1 cale par épaisseur, on ne peut que monter un poteau.
+// Arrondi au plus proche : l'écart final reste entre -2,5 et +2,5 mm.
+function shimsFor(h,target){const n=Math.max(0,Math.floor((target-h)/CALE+0.5)+0);const e=h+n*CALE-target;return {n,e,ok:Math.abs(e)<=TOL+1e-9};}
+function evaluate(hs,target){let total=0,maxE=0,sumE=0;for(const h of hs){const s=shimsFor(h,target);if(!s.ok)return null;total+=s.n;maxE=Math.max(maxE,Math.abs(s.e));sumE+=Math.abs(s.e);}return {target,total,maxE,sumE};}
+// Cible optimisée : le moins de cales possible, puis les plus petits écarts, puis la plus proche du zéro de départ.
+function optimize(hs){if(!hs.length)return null;const mx=Math.max(...hs);let best=null;
+ for(let t=mx-TOL;t<=mx+CALE+1e-9;t+=0.5){const r=evaluate(hs,Math.round(t*2)/2);if(!r)continue;
+  if(!best||r.total<best.total||(r.total===best.total&&(r.maxE<best.maxE-1e-9||(Math.abs(r.maxE-best.maxE)<1e-9&&(r.sumE<best.sumE-1e-9||(Math.abs(r.sumE-best.sumE)<1e-9&&Math.abs(r.target)<Math.abs(best.target)))))))best=r;}
+ return best;}
+const fmtMm=v=>(v>0?'+':v<0?'−':'')+String(Math.abs(Math.round(v*10)/10)).replace('.',',');
+function natural(a,b){const re=/^([A-Za-z]*)\D*(\d*)/;const x=a.name.match(re),y=b.name.match(re);return (x[1]||'').localeCompare(y[1]||'')||(+x[2]||0)-(+y[2]||0)||a.name.localeCompare(b.name);}
+function results(){
+ const measured=S.massifs.filter(m=>typeof m.h==='number');const hs=measured.map(m=>m.h);
+ const opt=optimize(hs);const atZero=hs.length?evaluate(hs,0):null;
+ const tooHigh=hs.length?measured.filter(m=>!shimsFor(m.h,0).ok).map(m=>m.name):[];
+ const rows=S.massifs.slice().sort(natural).map(m=>{if(typeof m.h!=='number'||!opt)return {m};const s=shimsFor(m.h,opt.target);return {m,n:s.n,e:s.e};});
+ let ref=null;if(opt){rows.forEach(r=>{if(r.n===0&&(ref===null||Math.abs(r.e)<Math.abs(ref.e)))ref=r;});}
+ return {opt,atZero,tooHigh,rows,measured:measured.length,missing:S.massifs.length-measured.length,ref};
+}
+
+// ---------- Lecture automatique du plan ----------
+function fitLine(pairs){const n=pairs.length;let sx=0,sy=0,sxx=0,sxy=0;pairs.forEach(([x,y])=>{sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;});const d=n*sxx-sx*sx;if(Math.abs(d)<1e-9)return null;const a=(n*sxy-sx*sy)/d;return {a,b:(sy-a*sx)/n};}
+// Ajustement robuste : on garde le modèle qui explique le plus de couples (les autres sont des chiffres sans rapport).
+function robustFit(pairs,tol,minIn,signWanted){let best=null;
+ for(let i=0;i<pairs.length;i++)for(let j=i+1;j<pairs.length;j++){const[p,q]=[pairs[i],pairs[j]];if(Math.abs(p[0]-q[0])<1e-6)continue;const a=(q[1]-p[1])/(q[0]-p[0]);if(signWanted&&Math.sign(a)!==signWanted)continue;if(Math.abs(a)<0.5)continue;const b=p[1]-a*p[0];
+  const inl=pairs.filter(([x,y])=>Math.abs(a*x+b-y)<=tol);const xs=new Set(inl.map(v=>v[0]));if(xs.size<minIn)continue;if(!best||inl.length>best.inl.length)best={inl};}
+ if(!best)return null;return fitLine(best.inl);}
+async function detect(page){
+ const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
+ const items=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>{const[x,y]=vp.convertToViewportPoint(i.transform[4],i.transform[5]);return {s:i.str.trim(),x,y,h:Math.hypot(i.transform[2],i.transform[3])||8,w:i.width||0};});
+ // 1. Tableau « points d'implantation » : nom de massif (A/1, B/12…) suivi de ses coordonnées X et Y.
+ const re=/^([A-Z]{1,2})\s*\/\s*(\d{1,3})([a-z']?)$/;const byName=new Map();
+ items.forEach(it=>{const m=it.s.match(re);if(!m)return;const nums=items.filter(t=>t!==it&&t.x>it.x+5&&t.x<it.x+700&&Math.abs(t.y-it.y)<=Math.max(3,it.h*.45)&&/^-?\d+(?:[.,]\d+)?$/.test(t.s)).sort((a,b)=>a.x-b.x);
+  if(nums.length<2)return;const name=m[1]+'/'+m[2]+m[3];if(byName.has(name))return;byName.set(name,{name,row:m[1],axis:+m[2],X:parseFloat(nums[0].s.replace(',','.')),Y:parseFloat(nums[1].s.replace(',','.'))});});
+ const table=[...byName.values()];if(table.length<2)return {table:[],calib:null};
+ // 2. Échelle horizontale : bulles d'axes 1, 2, 3… dessinées sur le plan.
+ const axisX={};table.forEach(t=>{(axisX[t.axis]=axisX[t.axis]||[]).push(t.X);});
+ const xPairs=[];items.forEach(it=>{if(!/^\d{1,3}$/.test(it.s))return;const v=axisX[+it.s];if(!v)return;const X=v.reduce((a,b)=>a+b,0)/v.length;if(v.some(x=>Math.abs(x-X)>0.05))return;xPairs.push([X,it.x+it.w/2]);});
+ const fx=robustFit(xPairs,4,3,+1);if(!fx)return {table,calib:null};
+ // 3. Position verticale : bulles des files (A, B, C…). Sinon : convention des plans (Y vers le haut).
+ const rowY={};table.forEach(t=>{(rowY[t.row]=rowY[t.row]||[]).push(t.Y);});
+ const yPairs=[];items.forEach(it=>{if(!/^[A-Z]{1,2}$/.test(it.s))return;const v=rowY[it.s];if(!v)return;const Y=v.reduce((a,b)=>a+b,0)/v.length;if(v.some(y=>Math.abs(y-Y)>0.05))return;yPairs.push([Y,it.y-it.h*0.35]);});
+ let fy=null;const distinctY=new Set(yPairs.map(p=>p[0]));
+ if(distinctY.size>=2){fy=robustFit(yPairs,6,2);if(fy&&Math.abs(Math.abs(fy.a)/fx.a-1)>0.15)fy=null;}
+ if(!fy&&yPairs.length){const p=yPairs[0];fy={a:-fx.a,b:p[1]+fx.a*p[0]};}
+ if(!fy)return {table,calib:{ax:fx.a,bx:fx.b,ay:-fx.a,by:null}};
+ return {table,calib:{ax:fx.a,bx:fx.b,ay:fy.a,by:fy.b}};
+}
+function placeFromCalib(){const c=S.calib;if(!c||c.by===null)return;S.massifs.forEach(m=>{if(m.X==null)return;m.px=c.ax*m.X+c.bx;m.py=c.ay*m.Y+c.by;});}
+
+// ---------- Affichage du plan, zoom et déplacement ----------
+async function renderPdf(){
+ const pdf=await pdfjsLib.getDocument({data:pdfBytes.slice(0)}).promise;pdfPage=await pdf.getPage(1);
+ const vp1=pdfPage.getViewport({scale:1});S.pageW=vp1.width;S.pageH=vp1.height;
+ R=Math.min(2,4096/vp1.width,4096/vp1.height,Math.sqrt(14e6/(vp1.width*vp1.height)));
+ const vp=pdfPage.getViewport({scale:R});const cv=$('cv');cv.width=Math.floor(vp.width);cv.height=Math.floor(vp.height);
+ $('world').style.width=cv.width+'px';$('world').style.height=cv.height+'px';
+ await pdfPage.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
+ $('empty').style.display='none';
+}
+// Les pastilles gardent une taille lisible à l'écran, et rétrécissent quand les massifs sont trop serrés (vue d'ensemble).
+function minGap(){const p=S.massifs.filter(m=>m.px!=null);let g=Infinity;for(let i=0;i<p.length;i++)for(let j=i+1;j<p.length;j++)g=Math.min(g,Math.hypot(p[i].px-p[j].px,p[i].py-p[j].py));return isFinite(g)?g:100;}
+function pinScale(){const gap=minGap()*R*view.z;return (Math.min(1,Math.max(0.45,gap/70))/view.z).toFixed(4);}
+function applyView(){$('world').style.transform=`translate(${view.tx}px,${view.ty}px) scale(${view.z})`;const inv=pinScale();document.querySelectorAll('.pin').forEach(p=>p.style.setProperty('--inv',inv));}
+function fit(){const st=$('stage').getBoundingClientRect();if(!S.pageW)return;let x0=0,y0=0,x1=S.pageW,y1=S.pageH;const pts=S.massifs.filter(m=>m.px!=null);
+ if(pts.length>=2){x0=Math.min(...pts.map(m=>m.px));x1=Math.max(...pts.map(m=>m.px));y0=Math.min(...pts.map(m=>m.py));y1=Math.max(...pts.map(m=>m.py));const mg=Math.max(40,(x1-x0)*.06);x0-=mg;x1+=mg;y0-=mg;y1+=mg;}
+ const z=Math.min(st.width/((x1-x0)*R),st.height/((y1-y0)*R));view.z=z;view.tx=st.width/2-((x0+x1)/2)*R*z;view.ty=st.height/2-((y0+y1)/2)*R*z;applyView();}
+function zoomAt(f,cx,cy){const nz=Math.min(8,Math.max(0.05,view.z*f));const k=nz/view.z;view.tx=cx-(cx-view.tx)*k;view.ty=cy-(cy-view.ty)*k;view.z=nz;applyView();}
+(function gestures(){const st=$('stage');const ptr=new Map();let start=null,moved=0,pinch=null;
+ st.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;try{st.setPointerCapture(e.pointerId);}catch(err){}ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptr.size===1){start={x:e.clientX,y:e.clientY,t:Date.now()};moved=0;}if(ptr.size===2){const[a,b]=[...ptr.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)};moved=99;}});
+ st.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;const prev=ptr.get(e.pointerId);const cur={x:e.clientX,y:e.clientY};ptr.set(e.pointerId,cur);
+  if(ptr.size===1){view.tx+=cur.x-prev.x;view.ty+=cur.y-prev.y;moved+=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y);applyView();}
+  else if(ptr.size===2&&pinch){const[a,b]=[...ptr.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);const r=st.getBoundingClientRect();const mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;
+   const pmx=mx-(cur.x-prev.x)/2,pmy=my-(cur.y-prev.y)/2;view.tx+=mx-pmx;view.ty+=my-pmy;if(pinch.d>0)zoomAt(d/pinch.d,mx,my);pinch.d=d;}});
+ const up=e=>{if(!ptr.has(e.pointerId))return;ptr.delete(e.pointerId);if(ptr.size<2)pinch=null;
+  if(ptr.size===0&&start&&moved<10&&Date.now()-start.t<600){const r=st.getBoundingClientRect();onTap(e.clientX-r.left,e.clientY-r.top);}if(ptr.size===0)start=null;};
+ st.addEventListener('pointerup',up);st.addEventListener('pointercancel',e=>{ptr.delete(e.pointerId);pinch=null;start=null;});
+ st.addEventListener('wheel',e=>{e.preventDefault();const r=st.getBoundingClientRect();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+ document.querySelectorAll('#zoombar [data-z]').forEach(b=>b.onclick=()=>{const r=st.getBoundingClientRect();zoomAt(+b.dataset.z,r.width/2,r.height/2);});
+ $('btnFit').onclick=fit;window.addEventListener('resize',()=>{if(S.pageW)fit();});})();
+const toPage=(sx,sy)=>({x:(sx-view.tx)/view.z/R,y:(sy-view.ty)/view.z/R});
+function nearest(sx,sy){let best=null;S.massifs.forEach(m=>{if(m.px==null)return;const X=m.px*R*view.z+view.tx,Y=m.py*R*view.z+view.ty;const d=Math.hypot(X-sx,Y-sy);if(d<=34&&(!best||d<best.d))best={m,d};});return best&&best.m;}
+
+// ---------- Pastilles ----------
+function draw(){const ov=$('overlay');ov.innerHTML='';const res=results();const byId=new Map(res.rows.map(r=>[r.m.id,r]));
+ S.massifs.forEach(m=>{if(m.px==null)return;const r=byId.get(m.id)||{};const el=document.createElement('div');let cls='pin';let txt=m.name;
+  if(typeof m.h==='number'){txt+=' '+(m.id===S.zeroId?'0':fmtMm(m.h));if(r.n!=null){cls+=r.n>0?' cale':' ok';txt+=' · '+r.n+'c';}}
+  if(m.id===S.zeroId)cls+=' zero';if(res.ref&&res.ref.m.id===m.id)cls+=' target';if(m.X==null)cls+=' manual';
+  el.className=cls;el.style.left=(m.px*R)+'px';el.style.top=(m.py*R)+'px';el.style.setProperty('--inv',pinScale());
+  el.innerHTML=`<div class="dot"></div><div class="lab">${m.id===S.zeroId?'⭐ ':''}${esc(txt)}</div>`;ov.appendChild(el);});
+ summary(res);}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function zeroName(){const z=S.massifs.find(m=>m.id===S.zeroId);return z?z.name:'—';}
+function summary(res){const el=$('summary');if(!S.massifs.length){el.innerHTML='—';return;}
+ if(!res.opt){el.innerHTML=`${S.massifs.length} massifs · aucune cote saisie`;return;}
+ let html=`<span class="big">${res.opt.total} cale${res.opt.total>1?'s':''}</span> à commander<br>Point zéro optimisé : viser <b>${fmtMm(res.opt.target)} mm</b> / ${esc(zeroName())}`;
+ if(res.atZero)html+=`<br>Avec votre point zéro : ${res.atZero.total} cales`;else if(res.tooHigh.length)html+=`<br>Votre point zéro est impossible (${esc(res.tooHigh.slice(0,3).join(', '))} trop haut)`;
+ if(res.missing)html+=`<br><span style="color:#b42318">${res.missing} massif${res.missing>1?'s':''} sans cote</span>`;el.innerHTML=html;}
+
+// ---------- Étapes ----------
+function setStep(text,buttons){$('stepText').innerHTML=text;const a=$('stepActions');a.innerHTML='';(buttons||[]).forEach(([lab,fn,cls])=>{const b=document.createElement('button');b.className='btn '+(cls||'');b.textContent=lab;b.onclick=fn;a.appendChild(b);});}
+function refreshStep(){
+ const m=S.mode;
+ if(m==='idle')setStep("Ouvrez le plan d'implantation PDF du bureau d'études.");
+ else if(m==='verify')setStep(`<b>${S.massifs.length} massifs repérés.</b> Les pastilles sont-elles bien sur les massifs ?`,[['✓ Oui',()=>go('zero'),'primary'],['Décaler',()=>go('shift')],['Recaler',()=>go('cal1')]]);
+ else if(m==='shift'){const t=firstTable();setStep(`Touchez le vrai centre du massif <b>${esc(t.name)}</b>.`,[['Annuler',()=>go('verify')]]);}
+ else if(m==='cal1'){const[a]=calPair();setStep(`Calage 1/2 : touchez le massif <b>${esc(a.name)}</b>.`,[['Annuler',()=>go(S.calib&&S.calib.by!==null?(S.zeroId?'saisie':'verify'):'cal1')]]);}
+ else if(m==='cal2'){const[,b]=calPair();setStep(`Calage 2/2 : touchez le massif <b>${esc(b.name)}</b>.`,[['Annuler',()=>go('cal1')]]);}
+ else if(m==='zero')setStep(`<b>Choisissez le point zéro</b> : touchez le massif de référence (cote 0).`,S.zeroId?[['Continuer',()=>go('saisie'),'primary']]:[]);
+ else if(m==='saisie')setStep(`Touchez un massif pour saisir son écart (mm) par rapport à ⭐ <b>${esc(zeroName())}</b>.`,[['＋ Massif',()=>go('add')]].concat(tableMassifs().length>=2?[['Recaler',()=>go('cal1')]]:[]));
+ else if(m==='add')setStep(`Touchez le plan à l'endroit du massif à ajouter.`,[['Terminé',()=>go(S.zeroId?'saisie':'zero'),'primary']]);
+ else if(m==='manual')setStep(`<b>Aucun tableau de points trouvé.</b> Touchez chaque massif sur le plan pour l'ajouter.`,[['Terminé',()=>go('zero'),'primary']]);
+}
+function go(mode){S.mode=mode;save();refreshStep();draw();}
+const tableMassifs=()=>S.massifs.filter(m=>m.X!=null);
+function firstTable(){return tableMassifs().slice().sort(natural)[0];}
+function calPair(){const t=tableMassifs();let a=t[0],b=t[0],best=-1;for(const p of t)for(const q of t){const d=Math.hypot(p.X-q.X,p.Y-q.Y);if(d>best){best=d;a=p;b=q;}}return a.name<=b.name?[a,b]:[b,a];}
+
+function onTap(sx,sy){if(!S.pageW)return;const p=toPage(sx,sy);const m=S.mode;
+ if(m==='shift'){const t=firstTable();const dx=p.x-t.px,dy=p.y-t.py;S.calib.bx+=dx;S.calib.by+=dy;placeFromCalib();go('verify');return;}
+ if(m==='cal1'){pending={p};go('cal2');return;}
+ if(m==='cal2'){const[a,b]=calPair();const p1=pending.p,p2=p;const c={};
+  if(Math.abs(b.X-a.X)>0.01)c.ax=(p2.x-p1.x)/(b.X-a.X);if(Math.abs(b.Y-a.Y)>0.01)c.ay=(p2.y-p1.y)/(b.Y-a.Y);
+  if(c.ax==null&&c.ay==null){alert('Choisissez deux massifs éloignés.');go('cal1');return;}
+  if(c.ax==null)c.ax=Math.abs(c.ay);if(c.ay==null)c.ay=-Math.abs(c.ax);
+  c.bx=p1.x-c.ax*a.X;c.by=p1.y-c.ay*a.Y;S.calib=c;placeFromCalib();fit();go(S.zeroId?'saisie':'verify');return;}
+ if(m==='add'||m==='manual'){const n=S.massifs.filter(x=>x.X==null).length+1;const name=(prompt('Nom du massif',(m==='manual'?'M':'P')+n)||'').trim();if(!name)return;S.massifs.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,6),name,X:null,Y:null,px:p.x,py:p.y,h:null});save();draw();return;}
+ const hit=nearest(sx,sy);if(!hit)return;
+ if(m==='zero'){setZero(hit);return;}
+ if(m==='saisie'||m==='verify')openKeypad(hit);}
+// Changer de point zéro : les cotes déjà saisies sont recalculées par rapport au nouveau zéro.
+function setZero(m){
+ if(typeof m.h==='number'){const v=m.h;if(v)S.massifs.forEach(x=>{if(typeof x.h==='number')x.h=Math.round((x.h-v)*10)/10;});}
+ else if(S.zeroId&&S.zeroId!==m.id&&S.massifs.some(x=>typeof x.h==='number'&&x.id!==S.zeroId)){alert("Saisissez d'abord la cote de ce massif par rapport au point zéro actuel : les autres cotes seront alors recalculées.");return;}
+ S.zeroId=m.id;m.h=0;save();go('saisie');}
+
+// ---------- Clavier ----------
+let kp={m:null,s:''};
+function openKeypad(m){kp={m,s:typeof m.h==='number'?String(m.h).replace('.',','):''};$('kpTitle').textContent='Massif '+m.name+(m.id===S.zeroId?' ⭐ point zéro':'');$('kpZero').style.display=m.id===S.zeroId?'none':'';showKp();$('kpModal').classList.add('show');}
+function showKp(){const s=kp.s;$('kpVal').innerHTML=s===''||s==='-'?'<small>Saisir l’écart</small>':((s.startsWith('-')?'−'+s.slice(1):(s==='0'?'0':'+'+s))+' <small>mm</small>');}
+document.querySelectorAll('.kp button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='⌫')kp.s=kp.s.slice(0,-1);else if(k==='±')kp.s=kp.s.startsWith('-')?kp.s.slice(1):'-'+kp.s;else if(kp.s.replace('-','').length<4)kp.s=(kp.s==='0'?'':kp.s==='-0'?'-':kp.s)+k;showKp();});
+$('kpOk').onclick=()=>{const v=parseInt(kp.s,10);if(isNaN(v)){$('kpModal').classList.remove('show');return;}
+ if(kp.m.id===S.zeroId&&v!==0){S.massifs.forEach(x=>{if(typeof x.h==='number'&&x.id!==S.zeroId)x.h-=v;});kp.m.h=0;}else kp.m.h=v;
+ $('kpModal').classList.remove('show');save();draw();};
+$('kpClear').onclick=()=>{if(kp.m.id===S.zeroId){$('kpModal').classList.remove('show');return;}kp.m.h=null;$('kpModal').classList.remove('show');save();draw();};
+$('kpCancel').onclick=()=>$('kpModal').classList.remove('show');
+$('kpZero').onclick=()=>{const m=kp.m;const v=parseInt(kp.s,10);if(!isNaN(v))m.h=v;$('kpModal').classList.remove('show');setZero(m);};
+$('kpDel').onclick=()=>{if(!confirm('Retirer le massif '+kp.m.name+' du relevé ?'))return;S.massifs=S.massifs.filter(x=>x!==kp.m);if(S.zeroId===kp.m.id)S.zeroId=null;$('kpModal').classList.remove('show');save();go(S.zeroId?'saisie':'zero');};
+
+// ---------- Tableau ----------
+function tableHtml(res){return '<tr><th>Massif</th><th>Écart mesuré</th><th>Cales</th><th>Écart final</th></tr>'+res.rows.map(r=>`<tr class="${r.m.id===S.zeroId?'zero':''}"><td>${r.m.id===S.zeroId?'⭐ ':''}${esc(r.m.name)}</td><td>${typeof r.m.h==='number'?fmtMm(r.m.h)+' mm':'—'}</td><td>${r.n!=null?`<span class="tag ${r.n?'c':'o'}">${r.n}</span>`:'—'}</td><td>${r.e!=null?fmtMm(r.e)+' mm':'—'}</td></tr>`).join('');}
+$('btnTable').onclick=()=>{const res=results();$('tabRes').innerHTML=tableHtml(res);$('tabInfo').innerHTML=res.opt?`Point zéro de départ : ⭐ ${esc(zeroName())}. Point zéro optimisé : viser <b>${fmtMm(res.opt.target)} mm</b>. Total : <b>${res.opt.total} cales</b> de 5 mm.`:'Aucune cote saisie.';$('tabModal').classList.add('show');};
+$('tabClose').onclick=()=>$('tabModal').classList.remove('show');
+
+// ---------- Export PDF (plan + cotes + tableau) ----------
+const pdfTxt=s=>String(s).replace(/[−–]/g,'-').replace(/⭐/g,'').replace(/[^\x20-\x7E -ÿ]/g,'');
+async function exportPdf(){const res=results();if(!pdfBytes||!res.opt){alert('Saisissez au moins une cote avant d’exporter.');return;}
+ busy(true,'Préparation du PDF…');
+ try{const {bytes,name}=await buildPdf(res);
+  const file=new File([bytes],name,{type:'application/pdf'});busy(false);
+  if(navigator.canShare&&navigator.canShare({files:[file]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){try{await navigator.share({files:[file],title:name});return;}catch(e){if(e&&e.name==='AbortError')return;}}
+  const url=URL.createObjectURL(file);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+ }catch(e){busy(false);alert('Export PDF impossible : '+(e.message||e));}}
+async function buildPdf(res){
+ {const {PDFDocument,StandardFonts,rgb}=PDFLib;const out=await PDFDocument.create();const src=await PDFDocument.load(pdfBytes.slice(0),{ignoreEncryption:true});
+  const font=await out.embedFont(StandardFonts.Helvetica),bold=await out.embedFont(StandardFonts.HelveticaBold);
+  const W=1190.55,H=841.89,M=26;const page=out.addPage([W,H]);
+  // Zone d'implantation (cadre autour des massifs)
+  const pts=S.massifs.filter(m=>m.px!=null);let x0=Math.min(...pts.map(m=>m.px)),x1=Math.max(...pts.map(m=>m.px)),y0=Math.min(...pts.map(m=>m.py)),y1=Math.max(...pts.map(m=>m.py));
+  const mg=Math.max(45,(x1-x0)*.05);x0=Math.max(0,x0-mg);x1=Math.min(S.pageW,x1+mg);y0=Math.max(0,y0-mg);y1=Math.min(S.pageH,y1+mg);
+  // Tableau : colonnes de lignes en bas de page
+  const rows=res.rows;const cols=rows.length>48?5:rows.length>27?4:rows.length>12?3:2;const per=Math.ceil(rows.length/cols);const rowH=12.5;const tableH=26+per*rowH+34;
+  const headH=64;const plotTop=H-M-headH,plotBottom=M+tableH+8;const aw=W-2*M,ah=plotTop-plotBottom;const s=Math.min(aw/(x1-x0),ah/(y1-y0));
+  const pw=(x1-x0)*s,ph=(y1-y0)*s;const ox=M+(aw-pw)/2,oy=plotBottom+(ah-ph)/2;
+  const srcPage=src.getPage(0);const rot=srcPage.getRotation().angle%360;
+  if(rot===0){const mb=srcPage.getMediaBox();const vb=pdfPage.view;const left=vb[0]+x0,right=vb[0]+x1,top=vb[3]-y0,bottom=vb[3]-y1;
+   const emb=await out.embedPage(srcPage,{left,bottom,right,top});page.drawPage(emb,{x:ox,y:oy,width:pw,height:ph});}
+  else{const vp=pdfPage.getViewport({scale:3});const c=document.createElement('canvas');c.width=Math.ceil((x1-x0)*3);c.height=Math.ceil((y1-y0)*3);const ctx=c.getContext('2d');ctx.translate(-x0*3,-y0*3);await pdfPage.render({canvasContext:ctx,viewport:vp,intent:'print'}).promise;
+   const jpg=await out.embedJpg(await (await fetch(c.toDataURL('image/jpeg',.85))).arrayBuffer());page.drawImage(jpg,{x:ox,y:oy,width:pw,height:ph});}
+  page.drawRectangle({x:ox,y:oy,width:pw,height:ph,borderColor:rgb(.6,.65,.62),borderWidth:.6});
+  // Étiquettes à côté de chaque massif
+  const byId=new Map(rows.map(r=>[r.m.id,r]));const fs=Math.max(7,Math.min(9,s*12));
+  pts.forEach(m=>{const r=byId.get(m.id)||{};const X=ox+(m.px-x0)*s,Y=oy+(y1-m.py)*s;const zero=m.id===S.zeroId;
+   const t1=pdfTxt(m.name)+(zero?' (ZERO)':'');const t2=typeof m.h==='number'?(zero?'0 mm':pdfTxt(fmtMm(m.h))+' mm')+(r.n!=null?'  '+r.n+' cale'+(r.n>1?'s':''):''):'sans cote';
+   const w=Math.max(bold.widthOfTextAtSize(t1,fs),font.widthOfTextAtSize(t2,fs))+6,h=fs*2.3;const bx=X+5,by=Y+4;
+   const col=zero?rgb(.97,.85,.3):(r.n>0?rgb(1,.89,.75):(r.n===0?rgb(.84,.95,.88):rgb(1,1,1)));
+   page.drawCircle({x:X,y:Y,size:3.2,color:zero?rgb(.72,.53,.04):(r.n>0?rgb(.79,.42,0):(r.n===0?rgb(.08,.5,.25):rgb(.55,.58,.57)))});
+   page.drawRectangle({x:bx,y:by,width:w,height:h,color:col,borderColor:rgb(.3,.35,.33),borderWidth:.5,opacity:.95});
+   page.drawText(t1,{x:bx+3,y:by+h-fs-1,size:fs,font:bold,color:rgb(.05,.1,.08)});page.drawText(t2,{x:bx+3,y:by+3,size:fs,font,color:rgb(.15,.2,.18)});});
+  // En-tête
+  const title='Altimétrie des fondations - '+pdfTxt(S.fileName.replace(/\.pdf$/i,''));
+  page.drawText(pdfTxt(title),{x:M,y:H-M-14,size:15,font:bold,color:rgb(.03,.23,.16)});
+  page.drawText('Edité le '+new Date().toLocaleDateString('fr-FR')+'  -  Cales de 5 mm, 1 cale par épaisseur, arrondi au plus proche (écart final entre -2,5 et +2,5 mm)',{x:M,y:H-M-30,size:8.5,font,color:rgb(.33,.39,.36)});
+  page.drawText(pdfTxt(`Point zéro de départ : ${zeroName()}     Point zéro optimisé : viser ${fmtMm(res.opt.target)} mm par rapport à ${zeroName()}`),{x:M,y:H-M-47,size:11,font:bold,color:rgb(.45,.33,0)});
+  const z0=res.atZero?`Avec le point zéro de départ : ${res.atZero.total} cales`:`Point zéro de départ impossible (${res.tooHigh.join(', ')} trop haut)`;
+  page.drawText(pdfTxt(z0+(res.ref?`     Niveau visé proche de : ${res.ref.m.name} (${fmtMm(res.ref.e)} mm)`:'')),{x:M,y:H-M-61,size:9,font,color:rgb(.2,.25,.22)});
+  // Tableau en bas
+  const ty=M+tableH-14;page.drawText('Tableau des cales',{x:M,y:ty,size:11,font:bold,color:rgb(.03,.23,.16)});
+  const cw=(W-2*M)/cols;const heads=['Massif','Écart mesuré','Cales','Écart final'];const sub=[0,.30,.62,.80];
+  for(let c=0;c<cols;c++){const cx=M+c*cw;page.drawRectangle({x:cx,y:ty-16,width:cw-8,height:13,color:rgb(.92,.96,.94)});heads.forEach((hd,i)=>page.drawText(hd,{x:cx+3+sub[i]*(cw-8),y:ty-13,size:8,font:bold,color:rgb(.03,.23,.16)}));
+   rows.slice(c*per,(c+1)*per).forEach((r,i)=>{const yy=ty-16-(i+1)*rowH+2;const vals=[pdfTxt(r.m.name)+(r.m.id===S.zeroId?' (0)':''),typeof r.m.h==='number'?pdfTxt(fmtMm(r.m.h))+' mm':'-',r.n!=null?String(r.n):'-',r.e!=null?pdfTxt(fmtMm(r.e))+' mm':'-'];
+    if(r.n>0)page.drawRectangle({x:cx+sub[2]*(cw-8)-2,y:yy-2,width:22,height:11,color:rgb(1,.89,.75)});vals.forEach((v,j)=>page.drawText(v,{x:cx+3+sub[j]*(cw-8),y:yy,size:8,font:j===2?bold:font,color:rgb(.1,.13,.12)}));
+    page.drawLine({start:{x:cx,y:yy-3},end:{x:cx+cw-8,y:yy-3},thickness:.3,color:rgb(.85,.88,.86)});});}
+  const tot=`TOTAL À COMMANDER : ${res.opt.total} cale${res.opt.total>1?'s':''} de 5 mm`+(res.missing?`   (${res.missing} massif${res.missing>1?'s':''} sans cote non compté${res.missing>1?'s':''})`:'');
+  page.drawText(pdfTxt(tot),{x:M,y:M+4,size:13,font:bold,color:rgb(.6,.32,0)});
+  const bytes=await out.save();const name='Altimetrie_'+(S.fileName.replace(/\.pdf$/i,'').replace(/[^\w\- ]+/g,'_')||'plan')+'.pdf';
+  return {bytes,name};}}
+$('btnPdf').onclick=exportPdf;
+
+// ---------- Ouverture du plan ----------
+async function loadPlan(bytes,name){busy(true,'Lecture du plan…');
+ try{pdfBytes=bytes;await renderPdf();
+  if(name!==undefined){S.fileName=name;$('fileName').textContent=name;const d=await detect(pdfPage);
+   S.massifs=d.table.map((t,i)=>({id:'t'+i,name:t.name,X:t.X,Y:t.Y,px:null,py:null,h:null}));S.zeroId=null;S.calib=d.calib;
+   if(!S.massifs.length){S.mode='manual';}else if(d.calib&&d.calib.by!==null){placeFromCalib();S.mode='verify';}else{S.mode='cal1';}
+   await idbSet({bytes,name});save();}
+  busy(false);fit();refreshStep();draw();
+ }catch(e){busy(false);alert('Impossible de lire ce PDF : '+(e.message||e));}}
+const openFile=()=>$('file').click();$('btnOpen').onclick=openFile;$('btnOpen2').onclick=openFile;
+$('file').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;if(S.massifs.some(m=>typeof m.h==='number')&&!confirm('Ouvrir un autre plan efface le relevé en cours. Continuer ?'))return;await loadPlan(new Uint8Array(await f.arrayBuffer()),f.name);};
+$('btnAdd').onclick=()=>{if(!S.pageW)return openFile();go('add');};
+$('btnNew').onclick=()=>$('newModal').classList.add('show');$('newCancel').onclick=()=>$('newModal').classList.remove('show');
+$('newCotes').onclick=()=>{S.massifs.forEach(m=>m.h=null);S.zeroId=null;$('newModal').classList.remove('show');go(S.pageW?'zero':'idle');};
+$('newAll').onclick=async()=>{S={fileName:'',massifs:[],zeroId:null,calib:null,mode:'idle',pageW:0,pageH:0};pdfBytes=null;save();await idbSet(null);location.reload();};
+
+// ---------- Reprise du relevé en cours ----------
+(async()=>{try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(s&&s.massifs)S=Object.assign(S,s);}catch(e){}
+ $('fileName').textContent=S.fileName||'Aucun plan chargé';const f=await idbGet();
+ if(f&&f.bytes){await loadPlan(f.bytes);}else{S.mode='idle';refreshStep();draw();}})();
+window.__altimetrie={optimize,evaluate,shimsFor,results,loadPlan,buildPdf,setZero,draw,go,get state(){return S;}};
+</script>
+</body>
+</html>
