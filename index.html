@@ -91,7 +91,7 @@ table.res tr.zero td{background:#fff6d3}
   <button data-k="±" class="op">＋/−</button><button data-k="0">0</button><button data-k="⌫" class="op">⌫</button>
  </div>
  <div class="row2"><button class="btn" id="kpClear">Effacer la cote</button><button class="btn primary" id="kpOk">✓ Valider</button></div>
- <div class="row2"><button class="btn" id="kpZero">⭐ Point zéro</button><button class="btn red" id="kpDel">🗑 Retirer</button><button class="btn" id="kpCancel">Annuler</button></div>
+ <div class="row2"><button class="btn" id="kpZero">📍 Référence</button><button class="btn red" id="kpDel">🗑 Retirer</button><button class="btn" id="kpCancel">Annuler</button></div>
 </div></div>
 
 <div class="modal" id="tabModal"><div class="box">
@@ -130,20 +130,20 @@ const busy=(on,t)=>{$('busy').classList.toggle('show',!!on);if(t)$('busyText').t
 // Arrondi au plus proche : l'écart final reste entre -2,5 et +2,5 mm.
 function shimsFor(h,target){const n=Math.max(0,Math.floor((target-h)/CALE+0.5)+0);const e=h+n*CALE-target;return {n,e,ok:Math.abs(e)<=TOL+1e-9};}
 function evaluate(hs,target){let total=0,maxE=0,sumE=0;for(const h of hs){const s=shimsFor(h,target);if(!s.ok)return null;total+=s.n;maxE=Math.max(maxE,Math.abs(s.e));sumE+=Math.abs(s.e);}return {target,total,maxE,sumE};}
-// Cible optimisée : le moins de cales possible, puis les plus petits écarts, puis la plus proche du zéro de départ.
-function optimize(hs){if(!hs.length)return null;const mx=Math.max(...hs);let best=null;
- for(let t=mx-TOL;t<=mx+CALE+1e-9;t+=0.5){const r=evaluate(hs,Math.round(t*2)/2);if(!r)continue;
-  if(!best||r.total<best.total||(r.total===best.total&&(r.maxE<best.maxE-1e-9||(Math.abs(r.maxE-best.maxE)<1e-9&&(r.sumE<best.sumE-1e-9||(Math.abs(r.sumE-best.sumE)<1e-9&&Math.abs(r.target)<Math.abs(best.target)))))))best=r;}
+// Point zéro optimisé : toujours un massif (règle chantier). Chaque massif mesuré est essayé comme zéro ;
+// on garde celui qui demande le moins de cales, puis celui qui donne les plus petits écarts finaux.
+function optimize(list){if(!list.length)return null;const hs=list.map(m=>m.h);let best=null;
+ list.forEach(m=>{const r=evaluate(hs,m.h);if(!r)return;r.zero=m;
+  if(!best||r.total<best.total||(r.total===best.total&&(r.maxE<best.maxE-1e-9||(Math.abs(r.maxE-best.maxE)<1e-9&&r.sumE<best.sumE-1e-9))))best=r;});
  return best;}
 const fmtMm=v=>(v>0?'+':v<0?'−':'')+String(Math.abs(Math.round(v*10)/10)).replace('.',',');
 function natural(a,b){const re=/^([A-Za-z]*)\D*(\d*)/;const x=a.name.match(re),y=b.name.match(re);return (x[1]||'').localeCompare(y[1]||'')||(+x[2]||0)-(+y[2]||0)||a.name.localeCompare(b.name);}
 function results(){
- const measured=S.massifs.filter(m=>typeof m.h==='number');const hs=measured.map(m=>m.h);
- const opt=optimize(hs);const atZero=hs.length?evaluate(hs,0):null;
- const tooHigh=hs.length?measured.filter(m=>!shimsFor(m.h,0).ok).map(m=>m.name):[];
- const rows=S.massifs.slice().sort(natural).map(m=>{if(typeof m.h!=='number'||!opt)return {m};const s=shimsFor(m.h,opt.target);return {m,n:s.n,e:s.e};});
- let ref=null;if(opt){rows.forEach(r=>{if(r.n===0&&(ref===null||Math.abs(r.e)<Math.abs(ref.e)))ref=r;});}
- return {opt,atZero,tooHigh,rows,measured:measured.length,missing:S.massifs.length-measured.length,ref};
+ const measured=S.massifs.filter(m=>typeof m.h==='number');
+ const opt=optimize(measured.map(m=>({id:m.id,name:m.name,h:m.h})));const zeroOpt=opt?opt.zero.id:null;
+ // Cotes des résultats exprimées par rapport au point zéro optimisé (rel), et non au massif de mesure.
+ const rows=S.massifs.slice().sort(natural).map(m=>{if(typeof m.h!=='number'||!opt)return {m};const s=shimsFor(m.h,opt.target);return {m,n:s.n,e:s.e,rel:Math.round((m.h-opt.target)*10)/10};});
+ return {opt,zeroOpt,rows,measured:measured.length,missing:S.massifs.length-measured.length};
 }
 
 // ---------- Lecture automatique du plan ----------
@@ -229,17 +229,17 @@ function nearest(sx,sy){let best=null;S.massifs.forEach(m=>{if(m.px==null)return
 // ---------- Pastilles ----------
 function draw(){const ov=$('overlay');ov.innerHTML='';const res=results();const byId=new Map(res.rows.map(r=>[r.m.id,r]));
  S.massifs.forEach(m=>{if(m.px==null)return;const r=byId.get(m.id)||{};const el=document.createElement('div');let cls='pin';let txt=m.name;
-  if(typeof m.h==='number'){txt+=' '+(m.id===S.zeroId?'0':fmtMm(m.h));if(r.n!=null){cls+=r.n>0?' cale':' ok';txt+=' · '+r.n+'c';}}
-  if(m.id===S.zeroId)cls+=' zero';if(res.ref&&res.ref.m.id===m.id)cls+=' target';if(m.X==null)cls+=' manual';
+  const isZero=m.id===res.zeroOpt,isRef=!res.zeroOpt&&m.id===S.zeroId;
+  if(r.rel!=null){txt+=' '+(isZero?'0':fmtMm(r.rel));cls+=r.n>0?' cale':' ok';txt+=' · '+r.n+'c';}else if(typeof m.h==='number')txt+=' '+fmtMm(m.h);
+  if(isZero)cls+=' zero';if(m.X==null)cls+=' manual';
   el.className=cls;el.style.left=(m.px*R)+'px';el.style.top=(m.py*R)+'px';el.style.setProperty('--inv',pinScale());
-  el.innerHTML=`<div class="dot"></div><div class="lab">${m.id===S.zeroId?'⭐ ':''}${esc(txt)}</div>`;ov.appendChild(el);});
+  el.innerHTML=`<div class="dot"></div><div class="lab">${isZero?'⭐ ':isRef?'📍 ':''}${esc(txt)}</div>`;ov.appendChild(el);});
  summary(res);}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function zeroName(){const z=S.massifs.find(m=>m.id===S.zeroId);return z?z.name:'—';}
 function summary(res){const el=$('summary');if(!S.massifs.length){el.innerHTML='—';return;}
  if(!res.opt){el.innerHTML=`${S.massifs.length} massifs · aucune cote saisie`;return;}
- let html=`<span class="big">${res.opt.total} cale${res.opt.total>1?'s':''}</span> à commander<br>Point zéro optimisé : viser <b>${fmtMm(res.opt.target)} mm</b> / ${esc(zeroName())}`;
- if(res.atZero)html+=`<br>Avec votre point zéro : ${res.atZero.total} cales`;else if(res.tooHigh.length)html+=`<br>Votre point zéro est impossible (${esc(res.tooHigh.slice(0,3).join(', '))} trop haut)`;
+ let html=`<span class="big">${res.opt.total} cale${res.opt.total>1?'s':''}</span> à commander<br>⭐ Point zéro : <b>${esc(res.opt.zero.name)}</b>`;
  if(res.missing)html+=`<br><span style="color:#b42318">${res.missing} massif${res.missing>1?'s':''} sans cote</span>`;el.innerHTML=html;}
 
 // ---------- Étapes ----------
@@ -251,8 +251,8 @@ function refreshStep(){
  else if(m==='shift'){const t=firstTable();setStep(`Touchez le vrai centre du massif <b>${esc(t.name)}</b>.`,[['Annuler',()=>go('verify')]]);}
  else if(m==='cal1'){const[a]=calPair();setStep(`Calage 1/2 : touchez le massif <b>${esc(a.name)}</b>.`,[['Annuler',()=>go(S.calib&&S.calib.by!==null?(S.zeroId?'saisie':'verify'):'cal1')]]);}
  else if(m==='cal2'){const[,b]=calPair();setStep(`Calage 2/2 : touchez le massif <b>${esc(b.name)}</b>.`,[['Annuler',()=>go('cal1')]]);}
- else if(m==='zero')setStep(`<b>Choisissez le point zéro</b> : touchez le massif de référence (cote 0).`,S.zeroId?[['Continuer',()=>go('saisie'),'primary']]:[]);
- else if(m==='saisie')setStep(`Touchez un massif pour saisir son écart (mm) par rapport à ⭐ <b>${esc(zeroName())}</b>.`,[['＋ Massif',()=>go('add')]].concat(tableMassifs().length>=2?[['Recaler',()=>go('cal1')]]:[]));
+ else if(m==='zero')setStep(`<b>Choisissez le massif de référence de vos mesures</b> (cote 0) : touchez-le.`,S.zeroId?[['Continuer',()=>go('saisie'),'primary']]:[]);
+ else if(m==='saisie')setStep(`Touchez un massif pour saisir son écart (mm) par rapport à 📍 <b>${esc(zeroName())}</b>. Le point zéro optimisé ⭐ est calculé automatiquement.`,[['＋ Massif',()=>go('add')]].concat(tableMassifs().length>=2?[['Recaler',()=>go('cal1')]]:[]));
  else if(m==='add')setStep(`Touchez le plan à l'endroit du massif à ajouter.`,[['Terminé',()=>go(S.zeroId?'saisie':'zero'),'primary']]);
  else if(m==='manual')setStep(`<b>Aucun tableau de points trouvé.</b> Touchez chaque massif sur le plan pour l'ajouter.`,[['Terminé',()=>go('zero'),'primary']]);
 }
@@ -281,7 +281,7 @@ function setZero(m){
 
 // ---------- Clavier ----------
 let kp={m:null,s:''};
-function openKeypad(m){kp={m,s:typeof m.h==='number'?String(m.h).replace('.',','):''};$('kpTitle').textContent='Massif '+m.name+(m.id===S.zeroId?' ⭐ point zéro':'');$('kpZero').style.display=m.id===S.zeroId?'none':'';showKp();$('kpModal').classList.add('show');}
+function openKeypad(m){kp={m,s:typeof m.h==='number'?String(m.h).replace('.',','):''};$('kpTitle').textContent='Massif '+m.name+(m.id===S.zeroId?' 📍 référence de mesure':'');$('kpHint').textContent='Écart en mm par rapport au massif de référence 📍 '+zeroName()+' : + plus haut, − plus bas.';$('kpZero').style.display=m.id===S.zeroId?'none':'';showKp();$('kpModal').classList.add('show');}
 function showKp(){const s=kp.s;$('kpVal').innerHTML=s===''||s==='-'?'<small>Saisir l’écart</small>':((s.startsWith('-')?'−'+s.slice(1):(s==='0'?'0':'+'+s))+' <small>mm</small>');}
 document.querySelectorAll('.kp button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='⌫')kp.s=kp.s.slice(0,-1);else if(k==='±')kp.s=kp.s.startsWith('-')?kp.s.slice(1):'-'+kp.s;else if(kp.s.replace('-','').length<4)kp.s=(kp.s==='0'?'':kp.s==='-0'?'-':kp.s)+k;showKp();});
 $('kpOk').onclick=()=>{const v=parseInt(kp.s,10);if(isNaN(v)){$('kpModal').classList.remove('show');return;}
@@ -293,8 +293,8 @@ $('kpZero').onclick=()=>{const m=kp.m;const v=parseInt(kp.s,10);if(!isNaN(v))m.h
 $('kpDel').onclick=()=>{if(!confirm('Retirer le massif '+kp.m.name+' du relevé ?'))return;S.massifs=S.massifs.filter(x=>x!==kp.m);if(S.zeroId===kp.m.id)S.zeroId=null;$('kpModal').classList.remove('show');save();go(S.zeroId?'saisie':'zero');};
 
 // ---------- Tableau ----------
-function tableHtml(res){return '<tr><th>Massif</th><th>Écart mesuré</th><th>Cales</th><th>Écart final</th></tr>'+res.rows.map(r=>`<tr class="${r.m.id===S.zeroId?'zero':''}"><td>${r.m.id===S.zeroId?'⭐ ':''}${esc(r.m.name)}</td><td>${typeof r.m.h==='number'?fmtMm(r.m.h)+' mm':'—'}</td><td>${r.n!=null?`<span class="tag ${r.n?'c':'o'}">${r.n}</span>`:'—'}</td><td>${r.e!=null?fmtMm(r.e)+' mm':'—'}</td></tr>`).join('');}
-$('btnTable').onclick=()=>{const res=results();$('tabRes').innerHTML=tableHtml(res);$('tabInfo').innerHTML=res.opt?`Point zéro de départ : ⭐ ${esc(zeroName())}. Point zéro optimisé : viser <b>${fmtMm(res.opt.target)} mm</b>. Total : <b>${res.opt.total} cales</b> de 5 mm.`:'Aucune cote saisie.';$('tabModal').classList.add('show');};
+function tableHtml(res){return '<tr><th>Massif</th><th>Cote / point zéro</th><th>Cales</th><th>Écart final</th></tr>'+res.rows.map(r=>{const z=r.m.id===res.zeroOpt;return `<tr class="${z?'zero':''}"><td>${z?'⭐ ':''}${esc(r.m.name)}</td><td>${r.rel!=null?(z?'0 mm':fmtMm(r.rel)+' mm'):'—'}</td><td>${r.n!=null?`<span class="tag ${r.n?'c':'o'}">${r.n}</span>`:'—'}</td><td>${r.e!=null?fmtMm(r.e)+' mm':'—'}</td></tr>`;}).join('');}
+$('btnTable').onclick=()=>{const res=results();$('tabRes').innerHTML=tableHtml(res);$('tabInfo').innerHTML=res.opt?`⭐ Point zéro : <b>${esc(res.opt.zero.name)}</b>. Total : <b>${res.opt.total} cales</b> de 5 mm.`:'Aucune cote saisie.';$('tabModal').classList.add('show');};
 $('tabClose').onclick=()=>$('tabModal').classList.remove('show');
 
 // ---------- Export PDF (plan + cotes + tableau) ----------
@@ -325,8 +325,8 @@ async function buildPdf(res){
   page.drawRectangle({x:ox,y:oy,width:pw,height:ph,borderColor:rgb(.6,.65,.62),borderWidth:.6});
   // Étiquettes à côté de chaque massif
   const byId=new Map(rows.map(r=>[r.m.id,r]));const fs=Math.max(7,Math.min(9,s*12));
-  pts.forEach(m=>{const r=byId.get(m.id)||{};const X=ox+(m.px-x0)*s,Y=oy+(y1-m.py)*s;const zero=m.id===S.zeroId;
-   const t1=pdfTxt(m.name)+(zero?' (ZERO)':'');const t2=typeof m.h==='number'?(zero?'0 mm':pdfTxt(fmtMm(m.h))+' mm')+(r.n!=null?'  '+r.n+' cale'+(r.n>1?'s':''):''):'sans cote';
+  pts.forEach(m=>{const r=byId.get(m.id)||{};const X=ox+(m.px-x0)*s,Y=oy+(y1-m.py)*s;const zero=m.id===res.zeroOpt;
+   const t1=pdfTxt(m.name)+(zero?' (POINT ZERO)':'');const t2=r.rel!=null?(zero?'0 mm':pdfTxt(fmtMm(r.rel))+' mm')+'  '+r.n+' cale'+(r.n>1?'s':''):'sans cote';
    const w=Math.max(bold.widthOfTextAtSize(t1,fs),font.widthOfTextAtSize(t2,fs))+6,h=fs*2.3;const bx=X+5,by=Y+4;
    const col=zero?rgb(.97,.85,.3):(r.n>0?rgb(1,.89,.75):(r.n===0?rgb(.84,.95,.88):rgb(1,1,1)));
    page.drawCircle({x:X,y:Y,size:3.2,color:zero?rgb(.72,.53,.04):(r.n>0?rgb(.79,.42,0):(r.n===0?rgb(.08,.5,.25):rgb(.55,.58,.57)))});
@@ -336,14 +336,13 @@ async function buildPdf(res){
   const title='Altimétrie des fondations - '+pdfTxt(S.fileName.replace(/\.pdf$/i,''));
   page.drawText(pdfTxt(title),{x:M,y:H-M-14,size:15,font:bold,color:rgb(.03,.23,.16)});
   page.drawText('Edité le '+new Date().toLocaleDateString('fr-FR')+'  -  Cales de 5 mm, 1 cale par épaisseur, arrondi au plus proche (écart final entre -2,5 et +2,5 mm)',{x:M,y:H-M-30,size:8.5,font,color:rgb(.33,.39,.36)});
-  page.drawText(pdfTxt(`Point zéro de départ : ${zeroName()}     Point zéro optimisé : viser ${fmtMm(res.opt.target)} mm par rapport à ${zeroName()}`),{x:M,y:H-M-47,size:11,font:bold,color:rgb(.45,.33,0)});
-  const z0=res.atZero?`Avec le point zéro de départ : ${res.atZero.total} cales`:`Point zéro de départ impossible (${res.tooHigh.join(', ')} trop haut)`;
-  page.drawText(pdfTxt(z0+(res.ref?`     Niveau visé proche de : ${res.ref.m.name} (${fmtMm(res.ref.e)} mm)`:'')),{x:M,y:H-M-61,size:9,font,color:rgb(.2,.25,.22)});
+  page.drawText(pdfTxt(`Point zéro : ${res.opt.zero.name}`),{x:M,y:H-M-49,size:13,font:bold,color:rgb(.45,.33,0)});
+  page.drawText('Cotes exprimées par rapport au point zéro (+ plus haut, - plus bas).',{x:M,y:H-M-62,size:9,font,color:rgb(.2,.25,.22)});
   // Tableau en bas
   const ty=M+tableH-14;page.drawText('Tableau des cales',{x:M,y:ty,size:11,font:bold,color:rgb(.03,.23,.16)});
-  const cw=(W-2*M)/cols;const heads=['Massif','Écart mesuré','Cales','Écart final'];const sub=[0,.30,.62,.80];
+  const cw=(W-2*M)/cols;const heads=['Massif','Cote / zéro','Cales','Écart final'];const sub=[0,.30,.62,.80];
   for(let c=0;c<cols;c++){const cx=M+c*cw;page.drawRectangle({x:cx,y:ty-16,width:cw-8,height:13,color:rgb(.92,.96,.94)});heads.forEach((hd,i)=>page.drawText(hd,{x:cx+3+sub[i]*(cw-8),y:ty-13,size:8,font:bold,color:rgb(.03,.23,.16)}));
-   rows.slice(c*per,(c+1)*per).forEach((r,i)=>{const yy=ty-16-(i+1)*rowH+2;const vals=[pdfTxt(r.m.name)+(r.m.id===S.zeroId?' (0)':''),typeof r.m.h==='number'?pdfTxt(fmtMm(r.m.h))+' mm':'-',r.n!=null?String(r.n):'-',r.e!=null?pdfTxt(fmtMm(r.e))+' mm':'-'];
+   rows.slice(c*per,(c+1)*per).forEach((r,i)=>{const yy=ty-16-(i+1)*rowH+2;const z=r.m.id===res.zeroOpt;const vals=[pdfTxt(r.m.name)+(z?' (ZERO)':''),r.rel!=null?(z?'0 mm':pdfTxt(fmtMm(r.rel))+' mm'):'-',r.n!=null?String(r.n):'-',r.e!=null?pdfTxt(fmtMm(r.e))+' mm':'-'];
     if(r.n>0)page.drawRectangle({x:cx+sub[2]*(cw-8)-2,y:yy-2,width:22,height:11,color:rgb(1,.89,.75)});vals.forEach((v,j)=>page.drawText(v,{x:cx+3+sub[j]*(cw-8),y:yy,size:8,font:j===2?bold:font,color:rgb(.1,.13,.12)}));
     page.drawLine({start:{x:cx,y:yy-3},end:{x:cx+cw-8,y:yy-3},thickness:.3,color:rgb(.85,.88,.86)});});}
   const tot=`TOTAL À COMMANDER : ${res.opt.total} cale${res.opt.total>1?'s':''} de 5 mm`+(res.missing?`   (${res.missing} massif${res.missing>1?'s':''} sans cote non compté${res.missing>1?'s':''})`:'');
