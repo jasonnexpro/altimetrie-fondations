@@ -11,16 +11,16 @@ C'est un outil indépendant, ouvert depuis Suivi Chantier (Outils). Le plan PDF 
    - Si un massif de file intermédiaire n'est pas dans le tableau, l'outil le cherche sur le plan : il regarde, à chaque croisement entre une file intermédiaire (bulles A1, B1…) et un axe, s'il y a un massif dessiné en couleur.
    - Si les pastilles sont mal placées : **Décaler** (1 touche) ou **Recaler** (2 touches).
    - Les massifs absents du tableau s'ajoutent avec **＋ Massif**.
-3. **Point zéro** : toucher le massif de référence (cote 0).
-4. **Saisie** : toucher chaque massif et entrer son écart en mm par rapport au zéro (+ plus haut, − plus bas).
+3. **Référence de mesure 📍** : toucher le massif sur lequel le niveau est réglé (cote 0).
+4. **Saisie** : toucher chaque massif et entrer son écart en mm par rapport à cette référence (+ plus haut, − plus bas).
 5. **Résultat** :
-   - le point zéro optimisé, celui qui demande le moins de cales ;
-   - la comparaison avec le zéro de départ ;
+   - le **point zéro ⭐**, toujours un massif, celui qui demande le moins de cales ;
    - le total de cales à commander ;
    - le détail dans **📋 Tableau**.
+   - Toutes les cotes des résultats sont exprimées par rapport à ce point zéro ; la référence de mesure n'y apparaît plus.
 6. **📄 PDF** :
-   - la zone d'implantation du plan, avec la cote et les cales à côté de chaque massif ;
-   - le point zéro optimisé en haut ;
+   - la zone d'implantation du plan, avec la cote (par rapport au point zéro) et les cales à côté de chaque massif ;
+   - le point zéro en haut ;
    - le tableau des cales en bas.
 
 Le relevé en cours (plan, point zéro, cotes) est gardé sur l'appareil jusqu'à **↺ Nouveau**.
@@ -29,14 +29,15 @@ Le relevé en cours (plan, point zéro, cotes) est gardé sur l'appareil jusqu'�
 
 - **Cales :** 5 mm, une cale par épaisseur. On ne peut que monter un poteau.
 - **Arrondi au plus proche :** 2 mm → 0 cale ; 3 ou 4 mm → 1 cale ; 8 mm → 2 cales. L'écart final est toujours entre −2,5 et +2,5 mm.
-- **Point zéro optimisé :**
-  - toutes les hauteurs possibles sont testées au demi-millimètre ;
-  - on garde celle qui demande le moins de cales ;
-  - à égalité, celle qui donne les plus petits écarts finaux, puis la plus proche du zéro de départ.
+- **Point zéro optimisé, toujours sur un massif :**
+  - chaque massif mesuré est essayé comme point zéro ;
+  - on garde celui qui demande le moins de cales ;
+  - à égalité, celui qui donne les plus petits écarts finaux ;
+  - le massif choisi comme point zéro a toujours 0 cale.
 
 ## Vérifications réalisées
 
-- **Calcul :** contrôlé sur 3 000 relevés aléatoires, en le comparant à une recherche exhaustive au 1/10 de mm ; le minimum de cales est toujours trouvé.
+- **Calcul :** contrôlé sur 5 000 relevés aléatoires par un calcul indépendant, massif par massif. Le minimum de cales est toujours trouvé, et le point zéro est toujours un massif mesuré.
 - **Plan 12067 DARBOIS :**
   - 38 massifs lus dans le tableau, dont les 4 massifs de pignon (A1/1, A1/12, B1/1, B1/12), placés automatiquement sur les bons massifs ;
   - le repérage de secours par la couleur retrouve seul ces 4 massifs, à environ 1 point près ;
