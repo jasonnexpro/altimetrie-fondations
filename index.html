@@ -156,25 +156,42 @@ function robustFit(pairs,tol,minIn,signWanted){let best=null;
 async function detect(page){
  const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
  const items=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>{const[x,y]=vp.convertToViewportPoint(i.transform[4],i.transform[5]);return {s:i.str.trim(),x,y,h:Math.hypot(i.transform[2],i.transform[3])||8,w:i.width||0};});
- // 1. Tableau « points d'implantation » : nom de massif (A/1, B/12…) suivi de ses coordonnées X et Y.
- const re=/^([A-Z]{1,2})\s*\/\s*(\d{1,3})([a-z']?)$/;const byName=new Map();
+ // 1. Tableau « points d'implantation » : nom de massif (A/1, B/12, et files intermédiaires A1/1, B1/12…)
+ //    suivi de ses coordonnées X et Y.
+ const re=/^([A-Z]{1,2}\d{0,2})\s*\/\s*(\d{1,3})([a-z']?)$/;const byName=new Map();
  items.forEach(it=>{const m=it.s.match(re);if(!m)return;const nums=items.filter(t=>t!==it&&t.x>it.x+5&&t.x<it.x+700&&Math.abs(t.y-it.y)<=Math.max(3,it.h*.45)&&/^-?\d+(?:[.,]\d+)?$/.test(t.s)).sort((a,b)=>a.x-b.x);
   if(nums.length<2)return;const name=m[1]+'/'+m[2]+m[3];if(byName.has(name))return;byName.set(name,{name,row:m[1],axis:+m[2],X:parseFloat(nums[0].s.replace(',','.')),Y:parseFloat(nums[1].s.replace(',','.'))});});
- const table=[...byName.values()];if(table.length<2)return {table:[],calib:null};
+ const table=[...byName.values()];if(table.length<2)return {table:[],calib:null,inter:[]};
+ // Bulles de files intermédiaires (A1, B1…) : massifs hors tableau, par exemple sur les pignons.
+ const inter=items.filter(it=>/^[A-Z]{1,2}\d{1,2}$/.test(it.s)).map(it=>({label:it.s,y:it.y-it.h*0.35}));
  // 2. Échelle horizontale : bulles d'axes 1, 2, 3… dessinées sur le plan.
  const axisX={};table.forEach(t=>{(axisX[t.axis]=axisX[t.axis]||[]).push(t.X);});
  const xPairs=[];items.forEach(it=>{if(!/^\d{1,3}$/.test(it.s))return;const v=axisX[+it.s];if(!v)return;const X=v.reduce((a,b)=>a+b,0)/v.length;if(v.some(x=>Math.abs(x-X)>0.05))return;xPairs.push([X,it.x+it.w/2]);});
- const fx=robustFit(xPairs,4,3,+1);if(!fx)return {table,calib:null};
+ const fx=robustFit(xPairs,4,3,+1);if(!fx)return {table,calib:null,inter};
  // 3. Position verticale : bulles des files (A, B, C…). Sinon : convention des plans (Y vers le haut).
  const rowY={};table.forEach(t=>{(rowY[t.row]=rowY[t.row]||[]).push(t.Y);});
- const yPairs=[];items.forEach(it=>{if(!/^[A-Z]{1,2}$/.test(it.s))return;const v=rowY[it.s];if(!v)return;const Y=v.reduce((a,b)=>a+b,0)/v.length;if(v.some(y=>Math.abs(y-Y)>0.05))return;yPairs.push([Y,it.y-it.h*0.35]);});
+ const yPairs=[];items.forEach(it=>{if(!/^[A-Z]{1,2}\d{0,2}$/.test(it.s))return;const v=rowY[it.s];if(!v)return;const Y=v.reduce((a,b)=>a+b,0)/v.length;if(v.some(y=>Math.abs(y-Y)>0.05))return;yPairs.push([Y,it.y-it.h*0.35]);});
  let fy=null;const distinctY=new Set(yPairs.map(p=>p[0]));
  if(distinctY.size>=2){fy=robustFit(yPairs,6,2);if(fy&&Math.abs(Math.abs(fy.a)/fx.a-1)>0.15)fy=null;}
  if(!fy&&yPairs.length){const p=yPairs[0];fy={a:-fx.a,b:p[1]+fx.a*p[0]};}
- if(!fy)return {table,calib:{ax:fx.a,bx:fx.b,ay:-fx.a,by:null}};
- return {table,calib:{ax:fx.a,bx:fx.b,ay:fy.a,by:fy.b}};
+ if(!fy)return {table,calib:{ax:fx.a,bx:fx.b,ay:-fx.a,by:null},inter};
+ return {table,calib:{ax:fx.a,bx:fx.b,ay:fy.a,by:fy.b},inter};
 }
 function placeFromCalib(){const c=S.calib;if(!c||c.by===null)return;S.massifs.forEach(m=>{if(m.X==null)return;m.px=c.ax*m.X+c.bx;m.py=c.ay*m.Y+c.by;});}
+// Part de pixels colorés (massifs dessinés en couleur) autour d'un point du plan, et centre de cette tache de couleur.
+function colorSpot(x,y,r){const cv=$('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});const x0=Math.max(0,Math.floor((x-r)*R)),y0=Math.max(0,Math.floor((y-r)*R)),w=Math.min(cv.width-x0,Math.ceil(2*r*R)),h=Math.min(cv.height-y0,Math.ceil(2*r*R));if(w<=0||h<=0)return {ratio:0};
+ const d=ctx.getImageData(x0,y0,w,h).data;let n=0,sx=0,sy=0;for(let i=0;i<d.length;i+=4){const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]);if(mx-mn>50){n++;const k=i/4;sx+=k%w;sy+=Math.floor(k/w);}}
+ return {ratio:n/(w*h),cx:n?(x0+sx/n)/R:x,cy:n?(y0+sy/n)/R:y};}
+// Massifs des files intermédiaires (A1, B1…) : à chaque croisement avec un axe, on garde ceux réellement dessinés.
+function addIntermediate(){const c=S.calib;if(!c||c.by===null||!S.inter||!S.inter.length||S.interDone)return 0;
+ const axes=new Map();tableMassifs().forEach(m=>{const k=(m.name.match(/\/(\d+)/)||[])[1];if(k&&!axes.has(k))axes.set(k,m.X);});
+ const step=Math.abs(c.ax)*Math.min(...[...axes.values()].sort((a,b)=>a-b).map((v,i,arr)=>i?v-arr[i-1]:Infinity).filter(v=>v>0.5).concat([6]));
+ let added=0;const seen=new Set();
+ S.inter.forEach(b=>{if(seen.has(b.label))return;seen.add(b.label);
+  axes.forEach((X,num)=>{const x=c.ax*X+c.bx,y=b.y;const near=S.massifs.some(m=>m.px!=null&&Math.hypot(m.px-x,m.py-y)<step*0.4);if(near)return;
+   const spot=colorSpot(x,y,6);if(spot.ratio<0.05)return;const s2=colorSpot(spot.cx,spot.cy,7);const px=s2.ratio>0?s2.cx:spot.cx,py=s2.ratio>0?s2.cy:spot.cy;
+   S.massifs.push({id:'i'+b.label+'_'+num,name:b.label+'/'+num,X:(px-c.bx)/c.ax,Y:(py-c.by)/c.ay,px,py,h:null});added++;});});
+ S.interDone=true;return added;}
 
 // ---------- Affichage du plan, zoom et déplacement ----------
 async function renderPdf(){
@@ -251,7 +268,7 @@ function onTap(sx,sy){if(!S.pageW)return;const p=toPage(sx,sy);const m=S.mode;
   if(Math.abs(b.X-a.X)>0.01)c.ax=(p2.x-p1.x)/(b.X-a.X);if(Math.abs(b.Y-a.Y)>0.01)c.ay=(p2.y-p1.y)/(b.Y-a.Y);
   if(c.ax==null&&c.ay==null){alert('Choisissez deux massifs éloignés.');go('cal1');return;}
   if(c.ax==null)c.ax=Math.abs(c.ay);if(c.ay==null)c.ay=-Math.abs(c.ax);
-  c.bx=p1.x-c.ax*a.X;c.by=p1.y-c.ay*a.Y;S.calib=c;placeFromCalib();fit();go(S.zeroId?'saisie':'verify');return;}
+  c.bx=p1.x-c.ax*a.X;c.by=p1.y-c.ay*a.Y;S.calib=c;placeFromCalib();addIntermediate();fit();go(S.zeroId?'saisie':'verify');return;}
  if(m==='add'||m==='manual'){const n=S.massifs.filter(x=>x.X==null).length+1;const name=(prompt('Nom du massif',(m==='manual'?'M':'P')+n)||'').trim();if(!name)return;S.massifs.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,6),name,X:null,Y:null,px:p.x,py:p.y,h:null});save();draw();return;}
  const hit=nearest(sx,sy);if(!hit)return;
  if(m==='zero'){setZero(hit);return;}
@@ -339,8 +356,8 @@ $('btnPdf').onclick=exportPdf;
 async function loadPlan(bytes,name){busy(true,'Lecture du plan…');
  try{pdfBytes=bytes;await renderPdf();
   if(name!==undefined){S.fileName=name;$('fileName').textContent=name;const d=await detect(pdfPage);
-   S.massifs=d.table.map((t,i)=>({id:'t'+i,name:t.name,X:t.X,Y:t.Y,px:null,py:null,h:null}));S.zeroId=null;S.calib=d.calib;
-   if(!S.massifs.length){S.mode='manual';}else if(d.calib&&d.calib.by!==null){placeFromCalib();S.mode='verify';}else{S.mode='cal1';}
+   S.massifs=d.table.map((t,i)=>({id:'t'+i,name:t.name,X:t.X,Y:t.Y,px:null,py:null,h:null}));S.zeroId=null;S.calib=d.calib;S.inter=d.inter||[];S.interDone=false;
+   if(!S.massifs.length){S.mode='manual';}else if(d.calib&&d.calib.by!==null){placeFromCalib();addIntermediate();S.mode='verify';}else{S.mode='cal1';}
    await idbSet({bytes,name});save();}
   busy(false);fit();refreshStep();draw();
  }catch(e){busy(false);alert('Impossible de lire ce PDF : '+(e.message||e));}}
@@ -355,7 +372,7 @@ $('newAll').onclick=async()=>{S={fileName:'',massifs:[],zeroId:null,calib:null,m
 (async()=>{try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(s&&s.massifs)S=Object.assign(S,s);}catch(e){}
  $('fileName').textContent=S.fileName||'Aucun plan chargé';const f=await idbGet();
  if(f&&f.bytes){await loadPlan(f.bytes);}else{S.mode='idle';refreshStep();draw();}})();
-window.__altimetrie={optimize,evaluate,shimsFor,results,loadPlan,buildPdf,setZero,draw,go,get state(){return S;}};
+window.__altimetrie={optimize,evaluate,shimsFor,results,loadPlan,buildPdf,setZero,draw,go,addIntermediate,get state(){return S;}};
 </script>
 </body>
 </html>
