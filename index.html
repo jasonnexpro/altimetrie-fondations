@@ -303,9 +303,21 @@ async function exportPdf(){const res=results();if(!pdfBytes||!res.opt){alert('Sa
  busy(true,'Préparation du PDF…');
  try{const {bytes,name}=await buildPdf(res);
   const file=new File([bytes],name,{type:'application/pdf'});busy(false);
-  if(navigator.canShare&&navigator.canShare({files:[file]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){try{await navigator.share({files:[file],title:name});return;}catch(e){if(e&&e.name==='AbortError')return;}}
-  const url=URL.createObjectURL(file);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  // sur téléphone : le choix entre Télécharger et Partager (avant, le partage s'ouvrait directement) ; sur ordinateur : téléchargement direct
+  if(navigator.canShare&&navigator.canShare({files:[file]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){pdfChoice(file,name);return;}
+  pdfDownload(file,name);
  }catch(e){busy(false);alert('Export PDF impossible : '+(e.message||e));}}
+function pdfDownload(file,name){const url=URL.createObjectURL(file);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+function pdfChoice(file,name){let el=document.getElementById('pdfChoice');if(el)el.remove();el=document.createElement('div');el.id='pdfChoice';
+ el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(5,35,25,.5);display:flex;align-items:flex-end;justify-content:center;padding:16px';
+ const kb=Math.max(1,Math.round(file.size/1024));const b='display:block;width:100%;border:0;border-radius:12px;padding:14px;font:700 16px Arial,sans-serif;cursor:pointer;margin-top:10px';
+ el.innerHTML='<div style="background:#fff;border-radius:16px;padding:18px;width:min(420px,100%);box-shadow:0 12px 40px rgba(0,0,0,.3);font-family:Arial,sans-serif"><div style="font-weight:800;font-size:17px;color:#073b2a">📄 PDF prêt</div><div style="font-size:13px;color:#5b6b63;margin-top:4px;word-break:break-all"></div>'
+  +'<button type="button" data-a="dl" style="'+b+';background:#087a4b;color:#fff">⬇ Télécharger</button><button type="button" data-a="sh" style="'+b+';background:#eef5f1;color:#073b2a;border:1px solid #cfe0d6">📤 Partager</button><button type="button" data-a="x" style="'+b+';background:transparent;color:#5b6b63">Fermer</button><div data-msg style="font-size:12px;color:#a32626;margin-top:6px"></div></div>';
+ el.querySelector('div div:nth-child(2)').textContent=name+' · '+(kb>1024?(kb/1024).toFixed(1).replace('.',',')+' Mo':kb+' ko');
+ el.addEventListener('click',async e=>{const a=e.target.closest('[data-a]');if(e.target===el||(a&&a.dataset.a==='x')){el.remove();return;}if(!a)return;
+  if(a.dataset.a==='dl'){pdfDownload(file,name);el.remove();return;}
+  try{await navigator.share({files:[file],title:name});el.remove();}catch(err){if(err&&err.name==='AbortError')return;el.querySelector('[data-msg]').textContent='Partage impossible ici : utilise « ⬇ Télécharger ».';}});
+ document.body.appendChild(el);}
 async function buildPdf(res){
  {const {PDFDocument,StandardFonts,rgb}=PDFLib;const out=await PDFDocument.create();const src=await PDFDocument.load(pdfBytes.slice(0),{ignoreEncryption:true});
   const font=await out.embedFont(StandardFonts.Helvetica),bold=await out.embedFont(StandardFonts.HelveticaBold);
